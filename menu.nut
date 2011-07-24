@@ -1,3 +1,22 @@
+/*
+ * This file is part of TutorialAI, which is an AI for OpenTTD
+ * Copyright (C) 2011  Leif Linse
+ *
+ * TutorialAI is free software; you can redistribute it and/or modify it 
+ * under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; version 2 of the License
+ *
+ * TutorialAI is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ *
+ * You should have received a copy of the GNU General Public License
+ * along with TutorialAI; If not, see <http://www.gnu.org/licenses/> or
+ * write to the Free Software Foundation, Inc., 51 Franklin Street, 
+ * Fifth Floor, Boston, MA 02110-1301 USA.
+ *
+ */
 
 MENU_OPEN <- "__open__";
 MENU_CLOSED <- "__closed__";
@@ -27,7 +46,11 @@ class Menu {
 	// - button-text if button "clicked"
 	function CheckInput();
 
-	static function SplitIntoSigns(text)
+	// Polls CheckInput until it returns != MENU_OPEN and then returns the result
+	// from CheckInput.
+	function WaitUntilClose();
+
+	static function SplitIntoLines(text, line_length)
 	function GetWorkingMenuTop(num_lines);
 }
 
@@ -47,42 +70,48 @@ function Menu::Close()
 	this.button_list = [];
 }
 
-/* static */ function Menu::SplitIntoSigns(text)
+/* static */ function Menu::ByteLen(str)
 {
-	local sign_len = 30;
+	local len = 0;
+	foreach(c in str)
+	{
+		if(c <= 255)
+			len += 1;
+		else
+			len += 4;
+	}
+
+	return len;
+}
+
+/* static */ function Menu::SplitIntoLines(text, line_length)
+{
 
 	//text = text.strip();
 
 	local str_list = [];
-	while(text.len() > sign_len)
+	while(text.len() > line_length)
 	{
-		AILog.Info("s - text: " + text);
 		local next_line = "";
-		local copy_from = 0;
-		for(local i = 0; i < text.len(); ++i)
+		local i = 0;
+		while(i < text.len())
 		{
-			AILog.Info("i = " + i + " - text: " + text);
-			local curr_word_len = i - copy_from
-			if(next_line.len() + 1 + curr_word_len > sign_len)
+			local curr_word_len = i;
+			if(next_line.len() + 1 + curr_word_len > line_length)
 			{
 				// There is not enough room to add more words to new_line
 				if(next_line.len() == 0)
 				{
-					AILog.Info("'" + next_line + "' is empty");
-					// Detected a word longer than sign_len
+					// Detected a word longer than line_length
 					// => force break the word
 
-					if(copy_from != 0)
-						Die("Unexpected behaviour");
-
-					local next_word = text.slice(copy_from, i);
-					next_line = next_word.slice(copy_from, sign_len - 1) + "-";
-					text = text.slice(sign_len);
+					local next_word = text.slice(0, line_length - 1);
+					next_line = next_word + "-";
+					text = text.slice(line_length - 1);
 				}
 				else
 				{
 					// next_line has been filled by one or more words
-					text = text.slice(i); // correct? or i + 1?
 				}
 
 				break;
@@ -90,20 +119,49 @@ function Menu::Close()
 
 			// A word break has been found, and there is room for it (see checks above)
 			if(text[i] == ' ' || 
+					text[i] == '\n' || // or new-line
 					i == text.len() - 1) // or last char
 			{
-				local next_word = text.slice(copy_from, i);
-				print("Word found: '" + next_word + "'");
-				next_line += " " + next_word;
-				copy_from = i + 1;
-				//text = text.slice(i + 1); // correct? i or i + 1?
+				local next_word = text.slice(0, i);
+				if(next_line.len() != 0)
+					next_line += " ";
+				next_line += next_word;
+
+				local new_line = text[i] == '\n';
+
+				// Remove word from text
+				text = text.slice(i + 1); // correct? i or i + 1?
+
+				if(new_line)
+					break;
+
+				// "restart" char-loop from first char
+				i = 0;
+				continue;
 			}
+
+			// Next char
+			++i;
 		} 
 
 		str_list.append(next_line);
+	}
 
-		if(str_list.len() > 1)
-			AILog.Info("STOP");
+	// Append last line
+	if(text.len() > 0)
+		str_list.append(text);
+
+
+	// Fill upp with spaces at end of lines
+	for(local i = 0; i < str_list.len(); ++i)
+	{
+		if(str_list[i].len() == 0) // don't fill up empty lines
+			continue;
+
+		while(str_list[i].len() < line_length)
+		{
+			str_list[i] += " ";
+		}
 	}
 
 	return str_list;
@@ -150,8 +208,19 @@ function Menu::Open(text, buttons)
 {
 	this.Close();
 
-	local text_list = Menu.SplitIntoSigns(text);
-	local menu_top = this.GetWorkingMenuTop(text_list.len() + buttons.len());
+	// Print menu-text into debug-screen
+	local ai_debug_lines = Menu.SplitIntoLines(text, 80);
+	AILog.Info("");
+	AILog.Info("------------------------------------");
+	foreach(line in ai_debug_lines)
+	{
+		AILog.Info(line);
+	}
+
+	// Sign-based menu
+	local sign_len = 30;
+	local text_list = Menu.SplitIntoLines("(*) " + text, sign_len);
+	local menu_top = this.GetWorkingMenuTop(text_list.len() + 1 + buttons.len());
 
 	if(menu_top == null)
 	{
@@ -173,13 +242,18 @@ function Menu::Open(text, buttons)
 	local curr_tile = menu_top;
 	foreach(text_str in text_list)
 	{
-		local sign = AISign.BuildSign(curr_tile, text_str);
-		this.sign_list.append(sign);
+		if(text_str.len() > 0) // don't place empty signs
+		{
+			local sign = AISign.BuildSign(curr_tile, text_str);
+			this.sign_list.append(sign);
+		}
 
 		curr_tile = Tile.GetTileRelative(curr_tile, 1, 1);
 	}
 
 	// Place button signs
+	curr_tile = Tile.GetTileRelative(curr_tile, 1, 1); // a gap-line between message and buttons
+	AILog.Info("");
 	foreach(button in buttons)
 	{
 		local sign = AISign.BuildSign(curr_tile, "[" + button + "]");
@@ -190,7 +264,19 @@ function Menu::Open(text, buttons)
 		this.button_list.append(btn);
 
 		curr_tile = Tile.GetTileRelative(curr_tile, 1, 1);
+
+
+		// display buttons also in AI-debug window
+		AILog.Info("[" + button + "]");
 	}
+
+	
+	if(buttons.len() > 0)
+	{
+		AILog.Info("");
+		AILog.Info("(buttons can't be clicked in AI-debug window. You must remove the corresponding sign in the map to \"click\" it.");
+	}
+
 }
 
 function Menu::CheckInput()
@@ -218,3 +304,14 @@ function Menu::CheckInput()
 	return result;
 }
 
+function Menu::WaitUntilClose()
+{
+	local ret = this.CheckInput();
+	while(ret == MENU_OPEN)
+	{
+		AIController.Sleep(5);
+		ret = this.CheckInput();
+	}
+
+	return ret;
+}
