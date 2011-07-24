@@ -1,7 +1,7 @@
 #!ruby
 # 
-# This file is part of TutorialAI, which is an AI Library for OpenTTD
-# Copyright (C) 2010  Leif Linse
+# This file is part of TutorialAI, which is an AI for OpenTTD
+# Copyright (C) 2010-2011  Leif Linse
 # 
 # TutorialAI is free software; you can redistribute it and/or modify it 
 # under the terms of the GNU General Public License as published by
