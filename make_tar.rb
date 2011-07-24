@@ -1,0 +1,28 @@
+#!ruby
+# 
+# This file is part of TutorialAI, which is an AI Library for OpenTTD
+# Copyright (C) 2010  Leif Linse
+# 
+# TutorialAI is free software; you can redistribute it and/or modify it 
+# under the terms of the GNU General Public License as published by
+# the Free Software Foundation; version 2 of the License
+# 
+# TutorialAI is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+# 
+# You should have received a copy of the GNU General Public License
+# along with TutorialAI; If not, see <http://www.gnu.org/licenses/> or
+# write to the Free Software Foundation, Inc., 51 Franklin Street, 
+# Fifth Floor, Boston, MA 02110-1301 USA.
+# 
+
+# --- Create bundle ---
+
+system("mkdir TutorialAI")
+system("cp *.nut TutorialAI")
+system("cp -r Chapters TutorialAI")
+system("tar -cf TutorialAI.tar TutorialAI")
+
+system("rm -rf TutorialAI")
