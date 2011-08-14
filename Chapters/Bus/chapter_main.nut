@@ -80,13 +80,20 @@ function ChapterBus::Start()
 	g_menu_viewer.WaitUntilClose();
 
 	local station_tiles = [null, null];
-	station_tiles[0] = BuildInCityStationCloseTo(town_tiles[0], towns[0], false);
+	station_tiles[0] = Road.BuildStopInTown(towns[0], AIRoad.ROADVEHTYPE_BUS, Helper.GetPAXCargo(), Helper.GetPAXCargo()); // reduce risk of failing, by accepting locations that doesn't fully accept/produce passengers
 
 	g_menu_viewer.Open("When you click continue, a bus stop will be placed in Town B",
 			["continue"]);
 	g_menu_viewer.WaitUntilClose();
 
-	station_tiles[1] = BuildInCityStationCloseTo(town_tiles[1], towns[1], false);
+	station_tiles[1] = Road.BuildStopInTown(towns[1], AIRoad.ROADVEHTYPE_BUS, Helper.GetPAXCargo(), Helper.GetPAXCargo()); // reduce risk of failing, by accepting locations that doesn't fully accept/produce passengers
+
+	if(station_tiles[0] == null || !AIMap.IsValidTile(station_tiles[0]) ||
+		station_tiles[1] == null || !AIMap.IsValidTile(station_tiles[1]))
+	{
+		this.Error("failed to build road stop");
+		return;
+	}
 
 	// Build road
 	g_menu_viewer.Open("Now both towns have a bus stop to collect passengers. Next a road has to be built to connect the two towns.\n\nWhen you click on continue a road will be built between the towns. This may take some time.",
@@ -108,7 +115,13 @@ function ChapterBus::Start()
 	g_menu_viewer.Open("Now there is both bus stops and a road. Next thing we want is a bus. But in order to buy a bus, a depot is needed.\n\nWhen you click on continue, a depot will be placed in town A",
 			["continue"]);
 	g_menu_viewer.WaitUntilClose();
-	local depot_tile = BuildInCityStationCloseTo(town_tiles[0], towns[0], true);
+	local depot_tile = Road.BuildDepotNextToRoad(station_tiles[0], 50, 10000);
+
+	if(depot_tile == null || !AIMap.IsValidTile(depot_tile))
+	{
+		this.Error("failed to build road stop");
+		return;
+	}
 
 	// Build bus
 	g_menu_viewer.Open("Now all infrastructure is done. The following steps are now to buy a bus, give it orders and release it from the depot.",
@@ -152,7 +165,8 @@ function ChapterBus::Start()
 	AIVehicle.StartStopVehicle(vehicle);
 
 	// Done
-	g_menu_viewer.Open("Summary\n\nThe bus chapter has now came to an end and you have seen how to build a bus service between two towns.",
+	g_menu_viewer.Open("Summary\n\nThe bus chapter has now came to an end and you have seen how to build a bus service between two towns.\n\n" +
+			"As an exercise you might want to add another bus or connect two other towns.",
 			["continue"]);
 	g_menu_viewer.WaitUntilClose();
 
@@ -222,193 +236,3 @@ function ChapterBus::FindTownsToConnect()
 	return [town1, town2];
 }
 
-// From PAXLink
-function ChapterBus::CanConnectToRoad(road_tile, adjacent_tile_to_connect)
-{
-	// If road_tile don't have road type "road" (ie it is only a tram track), then we can't connect to it
-	if(!AIRoad.HasRoadType(road_tile, AIRoad.ROADTYPE_ROAD))
-		return false;
-
-	local neighbours = Tile.GetNeighbours4MainDir(road_tile);
-	
-	neighbours.RemoveItem(adjacent_tile_to_connect);
-
-	// This function requires that road_tile is connected with at least one other road tile.
-	neighbours.Valuate(AIRoad.IsRoadTile);
-	if(Helper.ListValueSum(neighbours) < 1)
-		return false;
-	
-	for(local neighbour_tile_id = neighbours.Begin(); neighbours.HasNext(); neighbour_tile_id = neighbours.Next())
-	{
-		if(AIRoad.IsRoadTile(neighbour_tile_id))
-		{
-			local ret = AIRoad.CanBuildConnectedRoadPartsHere(road_tile, neighbour_tile_id, adjacent_tile_to_connect);
-			if(ret == 0 || ret == -1)
-				return false;
-		}
-	}
-
-	return true;
-}
-// From PAXLink
-function ChapterBus::BuildRoadStation(tile_id, depot)
-{
-	if(AITile.IsWaterTile(tile_id))
-		return false;
-
-	// Don't even try if the tile has a steep slope
-	local slope = AITile.GetSlope(tile_id);
-	if(slope != 0 && AITile.IsSteepSlope(slope))
-		return false;
-
-	local neighbours = Tile.GetNeighbours4MainDir(tile_id);
-	neighbours.Valuate(AIRoad.IsRoadTile);
-	neighbours.KeepValue(1);
-	neighbours.Valuate(AIRoad.HasRoadType, AIRoad.ROADTYPE_ROAD);
-	neighbours.KeepValue(1);
-
-	/*Helper.ClearAllSigns();
-	for(local tile = neighbours.Begin(); neighbours.HasNext(); tile = neighbours.Next())
-	{
-		//Helper.SetSign(tile, "n");
-		AISign.BuildSign(tile, "n");
-	}*/
-
-	//MyValuate(neighbours, CanConnectToRoad, tile_id);
-	neighbours.Valuate(ChapterBus.CanConnectToRoad, tile_id);
-	neighbours.KeepValue(1);
-
-	neighbours.Valuate(AITile.GetMaxHeight);
-	neighbours.KeepValue(AITile.GetMaxHeight(tile_id));
-
-	// Return false if none of the neighbours has road
-	if(neighbours.Count() == 0)
-		return false;
-
-	local front = neighbours.Begin();
-
-	
-	if(!ChapterBus.CanConnectToRoad(front, tile_id))
-		return false;
-
-	if(!AITile.IsBuildable(tile_id) && !AIRoad.IsRoadTile(tile_id) && !AICompany.IsMine(AITile.GetOwner(tile_id)))
-	{
-		AITile.DemolishTile(tile_id);
-	}
-
-	// Build road
-	// Keep trying until we get another error than vehicle in the way
-	while(!AIRoad.BuildRoad(tile_id, front) && AIError.GetLastError() == AIError.ERR_VEHICLE_IN_THE_WAY);
-
-	if(!AIRoad.AreRoadTilesConnected(tile_id, front))
-		return false;
-
-	//Helper.SetSign(tile_id, "tile");
-	//Helper.SetSign(front, "front");
-
-	// Build station/depot
-	// Keep trying until we get another error than vehicle in the way
-	local ret = false; // for some strange reason this variable declaration can't be inside the loop
-	do
-	{
-		if(depot)
-			ret = AIRoad.BuildRoadDepot(tile_id, front);
-		else
-			ret = AIRoad.BuildRoadStation(tile_id, front, AIRoad.ROADVEHTYPE_BUS, AIStation.STATION_NEW);
-	}
-	while(!ret && AIError.GetLastError() == AIError.ERR_VEHICLE_IN_THE_WAY);
-
-	return ret;
-}
-
-// From PAXLink
-function ChapterBus::IsTileOnTownRoadGrid(tile_id)
-{
-	local n = AIGameSettings.GetValue("economy.town_layout").tointeger();
-	local dx = abs(tile_id % AIMap.GetMapSizeY());
-	local dy = abs(tile_id / AIMap.GetMapSizeY());
-	local on_road_grid = (n == 2 || n == 3) &&     // Town has 2x2 or 3x3 road grid layout
-		(dx % (n+1) == 0 || dy % (n+1) == 0);      // and tile is on the road grid
-
-	return on_road_grid;
-}
-
-// From PAXLink
-function ChapterBus::GridTileNeighbourScoreValuator(neighbour_tile_id, grid_tile_id)
-{
-	local score = 0;
-
-	if(AITile.IsBuildable(neighbour_tile_id))
-		score += 100;
-
-	if(AIRoad.GetNeighbourRoadCount(neighbour_tile_id) != 0)
-		score += 200000;
-
-	local diff_x = AIMap.GetTileX(grid_tile_id) - AIMap.GetTileX(neighbour_tile_id);
-	local diff_y = AIMap.GetTileY(grid_tile_id) - AIMap.GetTileY(neighbour_tile_id);
-	local opposite_tile_id = grid_tile_id + AIMap.GetTileIndex(diff_x, diff_y);
-
-	// don't give bonus to end of road.
-	if(AIRoad.IsRoadTile(opposite_tile_id) && AIRoad.AreRoadTilesConnected(opposite_tile_id, grid_tile_id))
-		score -= 200;
-
-	// prefer tiles close to grid_tile_id
-	score -= AIMap.DistanceManhattan(grid_tile_id, neighbour_tile_id) * 10
-
-	// Give a big penalty to tiles that is on the town grid
-	if(AIController.GetSetting("avoid_town_road_grid") == 1 && IsTileOnTownRoadGrid(neighbour_tile_id))
-		score -= 400;
-
-	score += AIBase.RandRange(1000);
-
-	return score;
-}
-
-// From PAXLink
-function ChapterBus::BuildInCityStationCloseTo(tile_id, town_id, depot)
-{
-	//if(AITile.IsBuildable(tile_id))
-	if(ChapterBus.BuildRoadStation(tile_id, depot))
-	{
-		return tile_id;
-	}
-	else
-	{
-		Log.Info("BulidRoadStation error: " + AIError.GetLastErrorString(), Log.LVL_DEBUG);
-		if(AIError.GetLastError() == AIError.ERR_LOCAL_AUTHORITY_REFUSES)
-			return AIMap.GetTileIndex(-1, -1);
-
-		local neighbours = Tile.GetNeighbours8(tile_id);
-
-		// only accept neighbours that are in the town
-		neighbours.Valuate(AITile.GetClosestTown);
-		neighbours.KeepValue(town_id);
-
-		neighbours.Valuate(ChapterBus.GridTileNeighbourScoreValuator, tile_id);
-		neighbours.Sort(AIAbstractList.SORT_BY_VALUE, false);
-
-		if(neighbours.Count() > 0)
-		{
-			// Try with first neighbour, but if that fails, take next one and try.
-			foreach(build_at, _ in neighbours)
-			{
-				if(ChapterBus.BuildRoadStation(build_at, depot))
-				{
-					if(depot)
-						Log.Info("Built road depot.", Log.LVL_DEBUG);
-					else
-						Log.Info("Built road station.", Log.LVL_DEBUG);
-					return build_at;
-				}
-				else if(AIError.GetLastError() == AIError.ERR_LOCAL_AUTHORITY_REFUSES)
-				{
-					// Don't retry if the reason for failure was that the local authority refused building
-					return AIMap.GetTileIndex(-1, -1);
-				}
-			}
-		}
-	}
-
-	//Log.Info("Returning tile -1, -1", Log.LVL_DEBUG);
-	return AIMap.GetTileIndex(-1, -1);
-}

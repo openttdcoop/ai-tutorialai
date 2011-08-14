@@ -18,7 +18,7 @@
  *
  */
 
-import("util.superlib", "SuperLib", 9);
+import("util.superlib", "SuperLib", 13);
 
 Log <- SuperLib.Log;
 Helper <- SuperLib.Helper;
@@ -37,6 +37,7 @@ Industry <- SuperLib.Industry;
 Order <- SuperLib.Order;
 OrderList <- SuperLib.OrderList;
 
+Road <- SuperLib.Road;
 RoadBuilder <- SuperLib.RoadBuilder;
 RoadPathFinder <- SuperLib.RoadPathFinder;
 

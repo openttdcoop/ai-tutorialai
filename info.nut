@@ -24,9 +24,9 @@ class TutorialAI extends AIInfo {
 	function GetShortName()            { return "TTAI"; }
 	function GetDescription() { return "The AI will talk to you through signs that are placed in the middle of the map (starting location of new games). Don't forget to set a short start delay for the AI unless you want to wait a year for it."; }
 	function GetAPIVersion()  { return "1.0"; }
-	function GetVersion()     { return 4; }
+	function GetVersion()     { return 5; }
 	function MinVersionToLoad() { return 1; }
-	function GetDate()        { return "2011-06-24"; }
+	function GetDate()        { return "2011-08-14"; }
 	function GetUrl()         { return "http://junctioneer.net/o-ai/TTAI"; }
 	function UseAsRandomAI()  { return false; }
 	function CreateInstance() { return "TutorialAI"; }
