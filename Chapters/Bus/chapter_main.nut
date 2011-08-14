@@ -25,11 +25,13 @@ class ChapterBus {
 
 	function Start();
 
-	function FindTownsToConnect();
+	static function FindTownsToConnect();
 	static function PopulationValuator(town);
 	static function TownDistValuator(town1, town2, target_dist);
+	static function GetMenuLocationNearTown(town, other_town);
+	static function MenuOtherTownDistanceValuator(tile, other_town_tile);
 
-	function Error(error);
+	static function Error(error);
 }
 
 function ChapterBus::Start()
@@ -45,11 +47,11 @@ function ChapterBus::Start()
 	// Find two towns
 	//Helper.SetSign(g_menu_viewer.location, "preparing tutorial ...", true);
 	g_menu_viewer.Open("Preparing tutorial...\n(Hold TAB-key to speed up)", []);
-	local towns = this.FindTownsToConnect();
+	local towns = ChapterBus.FindTownsToConnect();
 	if(towns[0] == null || towns[1] == null)
 	{
 		g_menu_viewer.Close();
-		this.Error("failed to find two towns to connect");
+		ChapterBus.Error("failed to find two towns to connect");
 		return;
 	}
 	local town_tiles = [AITown.GetLocation(towns[0]), AITown.GetLocation(towns[1])];
@@ -60,7 +62,7 @@ function ChapterBus::Start()
 	{
 		// failed to find path between towns
 		g_menu_viewer.Close();
-		this.Error("The bus tutorial failed on this map. Try to create a new game and try again.");
+		ChapterBus.Error("The bus tutorial failed on this map. Try to create a new game and try again.");
 		return;
 	}
 
@@ -69,9 +71,10 @@ function ChapterBus::Start()
 	// Tell user about found towns A + B
 	Helper.SetSign(AITown.GetLocation(towns[0]), "TOWN A", true);
 	Helper.SetSign(AITown.GetLocation(towns[1]), "TOWN B", true);
-	g_menu_viewer.Open("The first step is to find two suitable towns. In this tutorial the towns marked with TOWN A and TOWN B signs will be connected.",
+	g_menu_viewer.Open("The first step is to find two suitable towns. In this tutorial the towns marked with TOWN A and TOWN B signs will be connected.\n\nNext menu will be displayed near Town A",
 			["continue"]);
 	g_menu_viewer.WaitUntilClose();
+	g_menu_viewer.SetLocation(ChapterBus.GetMenuLocationNearTown(towns[0], towns[1]));
 
 
 	// Build bus stops
@@ -91,7 +94,7 @@ function ChapterBus::Start()
 	if(station_tiles[0] == null || !AIMap.IsValidTile(station_tiles[0]) ||
 		station_tiles[1] == null || !AIMap.IsValidTile(station_tiles[1]))
 	{
-		this.Error("failed to build road stop");
+		ChapterBus.Error("failed to build road stop");
 		return;
 	}
 
@@ -106,7 +109,7 @@ function ChapterBus::Start()
 
 		if(ret != RoadBuilder.CONNECT_SUCCEEDED)
 		{
-			this.Error("failed to build road");
+			ChapterBus.Error("failed to build road");
 			return;
 		}
 	}
@@ -119,7 +122,7 @@ function ChapterBus::Start()
 
 	if(depot_tile == null || !AIMap.IsValidTile(depot_tile))
 	{
-		this.Error("failed to build road stop");
+		ChapterBus.Error("failed to build road stop");
 		return;
 	}
 
@@ -135,14 +138,14 @@ function ChapterBus::Start()
 	local engine = Engine.GetEngine_PAXLink(20, AIVehicle.VT_ROAD);
 	if(!AIEngine.IsValidEngine(engine))
 	{
-		this.Error("couldn't find a suitable bus to buy");
+		ChapterBus.Error("couldn't find a suitable bus to buy");
 		return;
 	}
 	
 	local vehicle = AIVehicle.BuildVehicle(depot_tile, engine);
 	if(!AIVehicle.IsValidVehicle(vehicle))
 	{
-		this.Error("couldn't buy bus");
+		ChapterBus.Error("couldn't buy bus");
 		return;
 	}
 	AIVehicle.RefitVehicle(vehicle, Helper.GetPAXCargo()); // since GetEngine_PAXLink can return engines that by default don't carry PAX (but can be refitted to PAX), we need to refit bough vehicles to PAX.
@@ -174,7 +177,7 @@ function ChapterBus::Start()
 	Helper.ClearAllSigns();
 }
 
-function ChapterBus::Error(error)
+/* static */ function ChapterBus::Error(error)
 {
 	g_menu_viewer.Open("Tutorial Error: " + error, 
 			["continue"])
@@ -203,7 +206,7 @@ function ChapterBus::Error(error)
 	return Helper.Abs(AIMap.DistanceSquare(AITown.GetLocation(town_a), AITown.GetLocation(town_b)) - target_dist);
 }
 
-function ChapterBus::FindTownsToConnect()
+/* static */ function ChapterBus::FindTownsToConnect()
 {
 	local towns = AITownList();
 	towns.Valuate(ChapterBus.MapCenterValuator)
@@ -236,3 +239,50 @@ function ChapterBus::FindTownsToConnect()
 	return [town1, town2];
 }
 
+/* static */ function ChapterBus::MenuOtherTownDistanceValuator(tile, other_town_tile)
+{
+	local dist = AIMap.DistanceManhattan(tile, other_town_tile);
+	if(dist < 9)
+	{
+		return 100 * dist;
+	}
+
+	return dist;
+}
+
+/* static */ function ChapterBus::GetMenuLocationNearTown(town, other_town)
+{
+	local list = AIList();
+	local town_tile = AITown.GetLocation(town);
+	local other_town_tile = AITown.GetLocation(other_town);
+
+	foreach(dir, _ in Direction.GetAllDirsInRandomOrder())
+	{
+		// Add tile 6 to 10 tiles away in each direction (depending on direction)
+		//
+		// The menu is displayed from the menu location and south. Thus place it further away
+		// if it is placed north of the town.
+		local distance = 6;
+		if(dir == Direction.DIR_N)
+			distance += 4;
+		else if(dir == Direction.DIR_NE || dir = Direction.DIR_NW)
+			distance += 2
+		local tile = Direction.GetTileInDirection(town_tile, dir, distance);
+		if(AIMap.IsValidTile(tile))
+		{
+			list.AddItem(Direction.GetTileInDirection(town_tile, dir, 8), 0);
+		}
+	}
+
+	// Pick a tile that is not too close to the other town tile.
+	// On the other hand, it is not a bad thing if the menu is
+	// placed on the way towards the other town if, it is far away.
+	list.Valuate(MenuOtherTownDistanceValuator, other_town_tile);
+	list.KeepBottom(1); // keep lowest value
+
+	local tile = list.Begin();
+	if(AIMap.IsValidTile(tile))
+		return tile;
+
+	return town_tile; // fallback to the town center tile if everything else fails
+}
